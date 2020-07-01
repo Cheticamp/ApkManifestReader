@@ -3,14 +3,20 @@ package com.example.apkmanifestfetcher
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.util.Log
+import java.io.File
 
 /*
-    Identifies packages (installed or otherwise) to select for processing.
+    Identifies packages (installed or local) to select for processing.
  */
 
 object PackageSelector {
 
     fun getPackagesToParse(context: Context): List<ApkInfo> {
+        // lookAt* determines whether we are selecting installed packages and/or packages
+        // located in the files directory.
+        val lookAtInstalledPackages = true
+        val lookAtLocalPackages = false
+
         val apksToParse = mutableListOf<ApkInfo>()
         val installedApplications = context.packageManager.getInstalledPackages(0)
 
@@ -49,36 +55,74 @@ object PackageSelector {
 //            "com.teslacoilsw.launcherclientproxy",
         )
 
-        // If we are looking at all installed packages, we can disregard select packages by
-        // setting an entry in packagesToNotSelect.
-        val packagesToNotSelect = HashSet<String>()
+        // We can disregard selected packages by setting an entry in packagesToNotSelect.
+        @Suppress("RemoveExplicitTypeArguments")
+        val packagesToNotSelect = hashSetOf<String>(
+//            "com.google.android.ext.services"
+        )
+
         // Zip error - only DEFLATED entries can have EXT descriptor
         packagesToNotSelect.add("org.mozilla.firefox")
         // We will test this independently of the general scan.
         packagesToNotSelect.add("com.example.configtester")
 
-        when {
-            packagesToSelect.size > 0 -> {
-                // We have specific installed APKs to parse.
-                for (packageName in packagesToSelect) {
-                    context.packageManager.getPackageInfo(packageName, 0)?.apply {
-                        apksToParse.add(ApkInfo(packageName, applicationInfo))
-                    } ?: Log.e("Applog", "Could not find package $packageName")
+        @Suppress("ConstantConditionIf")
+        if (lookAtInstalledPackages) {
+            when {
+                packagesToSelect.size > 0 -> {
+                    // We have specific installed APKs to parse.
+                    for (packageName in packagesToSelect) {
+                        context.packageManager.getPackageInfo(packageName, 0)?.apply {
+                            apksToParse.add(
+                                ApkInfo(
+                                    packageName,
+                                    applicationInfo,
+                                    applicationInfo.publicSourceDir
+                                )
+                            )
+                        } ?: Log.e("Applog", "Could not find package $packageName")
+                    }
+                }
+                else -> {
+                    // We are looking at all installed APKs.
+                    for ((index, packageInfo) in installedApplications.withIndex()) {
+                        if (!packagesToNotSelect.contains(installedApplications[index].packageName)) {
+                            val packageName = packageInfo.packageName
+                            val applicationInfo = packageInfo.applicationInfo
+                            apksToParse.add(
+                                ApkInfo(
+                                    packageName,
+                                    applicationInfo,
+                                    applicationInfo.publicSourceDir
+                                )
+                            )
+                        }
+                    }
                 }
             }
-            else -> {
-                // We are looking at all installed APKs.
-                for ((index, packageInfo) in installedApplications.withIndex()) {
-                    if (!packagesToNotSelect.contains(installedApplications[index].packageName)) {
-                        val packageName = packageInfo.packageName
-                        val applicationInfo = packageInfo.applicationInfo
-                        apksToParse.add(ApkInfo(packageName, applicationInfo))
-                    }
+        }
+        @Suppress("ConstantConditionIf")
+        if (lookAtLocalPackages) {
+            File("${context.filesDir}/apks").walk().forEach {
+                if (it.isFile) {
+                    val packageManager = context.packageManager
+                    Log.d("Applog", "Selecting local file ${it.name}")
+                    packageManager.getPackageArchiveInfo(it.toString(), 0)?.apply {
+                        val packageName = packageName
+                        if (!packagesToNotSelect.contains(packageName)) {
+                            val applicationInfo = applicationInfo
+                            apksToParse.add(ApkInfo(packageName, applicationInfo, it.toString()))
+                        }
+                    } ?: Log.e("Applog", "Failed to get package for local file ${it.absolutePath}")
                 }
             }
         }
         return apksToParse
     }
 
-    data class ApkInfo(val packageName: String, val applicationInfo: ApplicationInfo)
+    data class ApkInfo(
+        val packageName: String,
+        val applicationInfo: ApplicationInfo,
+        val path: String
+    )
 }

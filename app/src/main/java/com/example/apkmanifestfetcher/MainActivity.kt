@@ -36,7 +36,7 @@ class MainActivity : AppCompatActivity() {
                     "AppLog",
                     "${packageCounter + 1}/${apksToParse.size} parsing app $packageName..."
                 )
-                val mainApkFilePath = apkToParse.applicationInfo.publicSourceDir
+                val mainApkFilePath = apkToParse.path
 //                copyApk(mainApkFilePath, packageName) // Uncomment to make a local copy of APK.
 
                 val parsedManifestOfMainApkFile =
