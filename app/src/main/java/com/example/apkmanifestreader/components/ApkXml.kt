@@ -17,6 +17,7 @@
 package com.example.apkmanifestreader.components
 
 import android.content.res.Resources
+import android.util.Log
 import com.example.apkmanifestreader.components.ResourceTypes.Companion.RES_STRING_POOL_TYPE
 import com.example.apkmanifestreader.components.ResourceTypes.Companion.RES_XML_CDATA_TYPE
 import com.example.apkmanifestreader.components.ResourceTypes.Companion.RES_XML_END_ELEMENT_TYPE
@@ -341,17 +342,13 @@ class ApkXml(
         return namesSpacesEmitted
     }
 
-    private fun getQualifiedTag(tagNameSpace: Int, tagId: Int): String {
+    private fun getQualifiedTag(nameSpaceId: Int, tagId: Int): String {
         var tagString = mStringPool[tagId]
         if (tagString == null) {
             reportError("Unknown tag: $tagId")
             tagString = mXmlNameValueHelper.getInvalidTagId(tagId)
         }
-        return if (tagNameSpace == NO_ENTRY) {
-            tagString
-        } else {
-            "${mNameSpaceManager.getNameSpacePrefix(mStringPool[tagNameSpace]!!)}:$tagString"
-        }
+        return getQualifiedName(nameSpaceId, tagString)
     }
 
     private fun getQualifiedAttr(nameSpaceId: Int, attrId: Int): String {
@@ -360,10 +357,27 @@ class ApkXml(
             reportError("Unknown XML attribute id: $attrId")
             attrName = mXmlNameValueHelper.getResIdRef(attrId)
         }
+        return getQualifiedName(nameSpaceId, attrName)
+    }
+
+    private fun getQualifiedName(nameSpaceId: Int, name: String): String {
         return if (nameSpaceId == NO_ENTRY) {
-            attrName
+            name
         } else {
-            "${mNameSpaceManager.getNameSpacePrefix(mStringPool[nameSpaceId]!!)}:$attrName"
+            val uri = mStringPool[nameSpaceId]
+            val prefix =
+                if (!uri.isNullOrBlank()) { // As it should be...
+                    mNameSpaceManager.getNameSpacePrefix(uri)
+                } else {
+                    // Fix for package com.keramidas.TitaniumBackup and maybe others that report
+                    // an empty string as a name space. Here we assume that the last created
+                    // name space is the one to use.
+                    Log.d("Applog", "Name space uri is blank.")
+                    // Get last pushed name space. If stack is empty, create a dummy one.
+                    mNameSpaceManager.getTopNameSpacePrefix()
+                        ?: mNameSpaceManager.getNameSpacePrefix(DUMMY_NAME_SPACE)
+                }
+            "$prefix:$name"
         }
     }
 
@@ -372,6 +386,8 @@ class ApkXml(
     companion object {
         private const val XML_HEADER =
             "<?xml version=\"1.0\" encoding=\"utf-8\" standalone=\"no\"?>"
+
+        private const val DUMMY_NAME_SPACE = "http://schemas.android.com/apk/res/dummy"
 
         private fun makeXmlNs(prefix: String, uri: String): String = "xmlns:$prefix=\"$uri\""
     }
@@ -407,6 +423,15 @@ class ApkXml(
             } else {
                 null
             }
+
+        fun getTopNameSpacePrefix(): String? {
+            val pos = mNameSpaceStack.size - 1
+            return if (pos >= 0) {
+                mNameSpaceStack[pos].prefix
+            } else {
+                null
+            }
+        }
 
         // If a name space is referenced but has not been tied to a prefix, invent a prefix for it.
         private fun createDummyPrefix(): String = "ns${++mDummyPrefixCount}"
